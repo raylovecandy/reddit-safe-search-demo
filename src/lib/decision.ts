@@ -39,8 +39,6 @@ export function decide({
     }
   }
 
-  const showInlineControl = true
-
   // Clamp override by eligibility
   const clampedOverride: EffectiveMode | undefined =
     queryOverride && availableModes.includes(queryOverride) ? queryOverride : undefined
@@ -53,7 +51,7 @@ export function decide({
     return {
       intent,
       intentConfidence,
-      showInlineControl,
+      showInlineControl: true,
       availableModes,
       defaultMode: profileMode,
       effectiveMode,
@@ -64,7 +62,13 @@ export function decide({
     }
   }
 
-  // Ambiguous: safer default unless profile=off AND user has high mature intent signal
+  // Ambiguous:
+  // - If profile is On, keep safe and do not show control.
+  // - If profile is Off + not heavy user, keep safe and do not show control.
+  // - If profile is Off + heavy user, default Off and show control.
+  const shouldShowAmbiguousControl =
+    prefs.ageEligible && prefs.safeSearch === 'off' && prefs.heavyPornUser
+
   const defaultMode: EffectiveMode = (() => {
     if (!prefs.ageEligible) return 'on'
     if (prefs.safeSearch === 'on') return 'on'
@@ -72,21 +76,23 @@ export function decide({
     return prefs.heavyPornUser ? 'off' : 'on'
   })()
 
-  const effectiveMode = clampedOverride ?? defaultMode
+  const effectiveMode = shouldShowAmbiguousControl
+    ? (clampedOverride ?? defaultMode)
+    : defaultMode
 
   return {
     intent,
     intentConfidence,
-    showInlineControl,
+    showInlineControl: shouldShowAmbiguousControl,
     availableModes,
     defaultMode,
     effectiveMode,
     reason:
-      clampedOverride != null
-        ? 'Ambiguous intent; query override applied (query-scoped).'
-        : defaultMode === 'off'
-          ? 'Ambiguous intent; profile is Off and user is heavy porn user → default Off.'
-          : 'Ambiguous intent; defaulting safer unless strong mature-intent signal.',
+      shouldShowAmbiguousControl && clampedOverride != null
+        ? 'Ambiguous intent; heavy-user path with query override applied.'
+        : shouldShowAmbiguousControl
+          ? 'Ambiguous intent; profile is Off and user is heavy porn user → show control and default Off.'
+          : 'Ambiguous intent; safer default with no inline control for this user/profile state.',
   }
 }
 
